@@ -1,0 +1,8 @@
+{
+  "app": { "title": "EdgeSheet" },
+  "nav": {
+    "sheet": "Sheet",
+    "close": "Close navigation",
+    "open": "Open navigation"
+  }
+}
