@@ -20,7 +20,7 @@ export default function DataGrid() {
 
   const onResize = useCallback(
     (idx: number, delta: number) => {
-      widthMapRef.current[idx] = (widthMapRef.current[idx] ?? 120) + delta;
+      widthMapRef.current[idx] = (widthMapRef.current[idx] ?? 10) + delta;
       setColumnWidth(idx, widthMapRef.current[idx]);
     },
     [setColumnWidth],
