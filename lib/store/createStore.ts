@@ -5,6 +5,7 @@ import { produce } from 'immer';
 import type { Sheet, Row } from '@/lib/schema/sheet';
 import { computeFormula } from '@/lib/formula';
 import { extractDeps } from '@/lib/formula/graph';
+import { persistMiddleware } from './persistMiddleware';
 
 // Initial sheet
 const initialSheet: Sheet = {
@@ -38,106 +39,108 @@ export interface SheetStore {
 export const useSheetStore = create<SheetStore>()(
   subscribeWithSelector(
     devtools(
-      (set, get) => ({
-        sheet: initialSheet,
-        columnWidths: {},
-        sort: null,
-        undoStack: [],
-        computed: {},
-        addRow: (row) =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.sheet.rows.push(row);
-              draft.sheet.updatedAt = new Date();
-            }),
-            false,
-            'addRow',
-          ),
-        addMultipleROws: (rows) =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.sheet.rows.push(...rows);
-              draft.sheet.updatedAt = new Date();
-            }),
-            false,
-            'addMultipleRows',
-          ),
-        updateCell: (rowIdx, cellIdx, value) =>
-          set(
-            produce<SheetStore>((draft) => {
-              if (!draft.sheet.rows[rowIdx]) return;
-              draft.sheet.rows[rowIdx][cellIdx] = value;
-              draft.sheet.updatedAt = new Date();
-            }),
-            false,
-            'updateCell',
-          ),
-        removeRow: (rowIdx) =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.sheet.rows.splice(rowIdx, 1);
-              draft.sheet.updatedAt = new Date();
-            }),
-            false,
-            'removeRow',
-          ),
-        setColumnWidth: (idx, px) =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.columnWidths[idx] = px;
-            }),
-            false,
-            'setColumnWidth',
-          ),
-        setSort: (sort) =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.sort = sort;
-            }),
-            false,
-            'setSort',
-          ),
-        pushUndo: () =>
-          set(
-            produce<SheetStore>((draft) => {
-              draft.undoStack.push(structuredClone(draft.sheet));
-              if (draft.undoStack.length > 20) draft.undoStack.shift();
-            }),
-            false,
-            'pushUndo',
-          ),
-        undo: () =>
-          set(
-            produce<SheetStore>((draft) => {
-              const prev = draft.undoStack.pop();
-              if (prev) draft.sheet = prev;
-            }),
-            false,
-            'undo',
-          ),
-        reset: () =>
-          set(
-            () => ({
-              sheet: { ...initialSheet, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() },
-              columnWidths: {},
-              sort: null,
-              undoStack: [],
-              computed: {},
-            }),
-            false,
-            'reset',
-          ),
-        setCellExpression: (row, col, expr) =>
-          set(
-            produce<SheetStore>((draft) => {
-              if (!draft.sheet.rows[row]) return;
-              draft.sheet.rows[row][col] = expr;
-              draft.sheet.updatedAt = new Date();
-            }),
-            false,
-            'setCellExpression',
-          ),
-      }),
+      persistMiddleware(
+        (set, get) => ({
+          sheet: initialSheet,
+          columnWidths: {},
+          sort: null,
+          undoStack: [],
+          computed: {},
+          addRow: (row) =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.sheet.rows.push(row);
+                draft.sheet.updatedAt = new Date();
+              }),
+              false,
+              'addRow',
+            ),
+          addMultipleRows: (rows) =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.sheet.rows.push(...rows);
+                draft.sheet.updatedAt = new Date();
+              }),
+              false,
+              'addMultipleRows',
+            ),
+          updateCell: (rowIdx, cellIdx, value) =>
+            set(
+              produce<SheetStore>((draft) => {
+                if (!draft.sheet.rows[rowIdx]) return;
+                draft.sheet.rows[rowIdx][cellIdx] = value;
+                draft.sheet.updatedAt = new Date();
+              }),
+              false,
+              'updateCell',
+            ),
+          removeRow: (rowIdx) =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.sheet.rows.splice(rowIdx, 1);
+                draft.sheet.updatedAt = new Date();
+              }),
+              false,
+              'removeRow',
+            ),
+          setColumnWidth: (idx, px) =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.columnWidths[idx] = px;
+              }),
+              false,
+              'setColumnWidth',
+            ),
+          setSort: (sort) =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.sort = sort;
+              }),
+              false,
+              'setSort',
+            ),
+          pushUndo: () =>
+            set(
+              produce<SheetStore>((draft) => {
+                draft.undoStack.push(structuredClone(draft.sheet));
+                if (draft.undoStack.length > 20) draft.undoStack.shift();
+              }),
+              false,
+              'pushUndo',
+            ),
+          undo: () =>
+            set(
+              produce<SheetStore>((draft) => {
+                const prev = draft.undoStack.pop();
+                if (prev) draft.sheet = prev;
+              }),
+              false,
+              'undo',
+            ),
+          reset: () =>
+            set(
+              () => ({
+                sheet: { ...initialSheet, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() },
+                columnWidths: {},
+                sort: null,
+                undoStack: [],
+                computed: {},
+              }),
+              false,
+              'reset',
+            ),
+          setCellExpression: (row, col, expr) =>
+            set(
+              produce<SheetStore>((draft) => {
+                if (!draft.sheet.rows[row]) return;
+                draft.sheet.rows[row][col] = expr;
+                draft.sheet.updatedAt = new Date();
+              }),
+              false,
+              'setCellExpression',
+            ),
+        }),
+      ),
       { name: 'EdgeSheet' },
     ),
   ),
