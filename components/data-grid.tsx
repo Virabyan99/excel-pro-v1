@@ -31,28 +31,35 @@ export default function DataGrid() {
     0,
   );
 
-  const Row = memo(({ index, style }: ListChildComponentProps) => {
-    const row = table.getRowModel().rows[index];
-    return (
-      <div
-        role="row"
-        style={style}
-        className={`row ${index % 2 ? 'row-even' : ''}`}
-      >
-        {row.getVisibleCells().map((cell) => (
+const Row = memo(({ index, style }: ListChildComponentProps) => {
+  const row = table.getRowModel().rows[index];
+  const computed = useSheetStore((s) => s.computed); // Access computed values
+
+  return (
+    <div
+      role="row"
+      style={style}
+      className={`row ${index % 2 ? 'row-even' : ''}`}
+    >
+      {row.getVisibleCells().map((cell) => {
+        const cellValue = cell.getValue();
+        const cellId = `${String.fromCharCode(65 + Number(cell.column.id))}${index + 1}`;
+        return (
           <div
             role="cell"
             key={cell.id}
             className="cell"
             style={{ width: cell.column.getSize() }}
           >
-            {cell.getValue() as string}
+            {typeof cellValue === 'string' && cellValue.startsWith('=')
+              ? computed[cellId] ?? '…' // Show computed value or loading indicator
+              : cellValue}
           </div>
-        ))}
-      </div>
-    );
-  });
-
+        );
+      })}
+    </div>
+  );
+});
   if (!isClient) {
     return null;
   }

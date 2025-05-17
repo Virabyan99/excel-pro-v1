@@ -3,6 +3,17 @@ import { create } from 'zustand';
 import { devtools, subscribeWithSelector } from 'zustand/middleware';
 import { produce } from 'immer';
 import type { Sheet, Row } from '@/lib/schema/sheet';
+import { computeFormula } from '@/lib/formula';
+import { extractDeps } from '@/lib/formula/graph';
+
+// Initial sheet
+const initialSheet: Sheet = {
+  id: crypto.randomUUID(),
+  name: 'Untitled',
+  rows: [],
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
 
 // Store interface
 export interface SheetStore {
@@ -10,8 +21,9 @@ export interface SheetStore {
   columnWidths: Record<number, number>;
   sort: { id: number; desc: boolean } | null;
   undoStack: Sheet[];
+  computed: Record<string, number | string>;
   addRow: (row: Row) => void;
-  addMultipleRows: (rows: Row[]) => void; // New action
+  addMultipleRows: (rows: Row[]) => void;
   updateCell: (rowIdx: number, cellIdx: number, value: Sheet['rows'][number][number]) => void;
   removeRow: (rowIdx: number) => void;
   setColumnWidth: (idx: number, px: number) => void;
@@ -19,30 +31,19 @@ export interface SheetStore {
   pushUndo: () => void;
   undo: () => void;
   reset: () => void;
+  setCellExpression: (row: number, col: number, expr: string) => void;
 }
-
-// Initial state
-const initialState: Sheet & { columnWidths: Record<number, number>; sort: SheetStore['sort']; undoStack: Sheet[] } = {
-  id: crypto.randomUUID(),
-  name: 'Untitled',
-  rows: [],
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  columnWidths: {},
-  sort: null,
-  undoStack: [], // Initialize undoStack
-};
 
 // Create the store
 export const useSheetStore = create<SheetStore>()(
   subscribeWithSelector(
     devtools(
       (set, get) => ({
-        sheet: initialState,
-        columnWidths: initialState.columnWidths,
-        sort: initialState.sort,
-        undoStack: initialState.undoStack,
-
+        sheet: initialSheet,
+        columnWidths: {},
+        sort: null,
+        undoStack: [],
+        computed: {},
         addRow: (row) =>
           set(
             produce<SheetStore>((draft) => {
@@ -52,8 +53,7 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'addRow',
           ),
-
-        addMultipleRows: (rows) =>
+        addMultipleROws: (rows) =>
           set(
             produce<SheetStore>((draft) => {
               draft.sheet.rows.push(...rows);
@@ -62,7 +62,6 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'addMultipleRows',
           ),
-
         updateCell: (rowIdx, cellIdx, value) =>
           set(
             produce<SheetStore>((draft) => {
@@ -73,7 +72,6 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'updateCell',
           ),
-
         removeRow: (rowIdx) =>
           set(
             produce<SheetStore>((draft) => {
@@ -83,7 +81,6 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'removeRow',
           ),
-
         setColumnWidth: (idx, px) =>
           set(
             produce<SheetStore>((draft) => {
@@ -92,7 +89,6 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'setColumnWidth',
           ),
-
         setSort: (sort) =>
           set(
             produce<SheetStore>((draft) => {
@@ -101,17 +97,15 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'setSort',
           ),
-
         pushUndo: () =>
           set(
             produce<SheetStore>((draft) => {
               draft.undoStack.push(structuredClone(draft.sheet));
-              if (draft.undoStack.length > 20) draft.undoStack.shift(); // Cap at 20 states
+              if (draft.undoStack.length > 20) draft.undoStack.shift();
             }),
             false,
             'pushUndo',
           ),
-
         undo: () =>
           set(
             produce<SheetStore>((draft) => {
@@ -121,12 +115,27 @@ export const useSheetStore = create<SheetStore>()(
             false,
             'undo',
           ),
-
         reset: () =>
           set(
-            () => ({ sheet: initialState, columnWidths: {}, sort: null, undoStack: [] }),
+            () => ({
+              sheet: { ...initialSheet, id: crypto.randomUUID(), createdAt: new Date(), updatedAt: new Date() },
+              columnWidths: {},
+              sort: null,
+              undoStack: [],
+              computed: {},
+            }),
             false,
             'reset',
+          ),
+        setCellExpression: (row, col, expr) =>
+          set(
+            produce<SheetStore>((draft) => {
+              if (!draft.sheet.rows[row]) return;
+              draft.sheet.rows[row][col] = expr;
+              draft.sheet.updatedAt = new Date();
+            }),
+            false,
+            'setCellExpression',
           ),
       }),
       { name: 'EdgeSheet' },
@@ -134,9 +143,43 @@ export const useSheetStore = create<SheetStore>()(
   ),
 );
 
+// Subscription for formula computation (only on client)
+if (typeof window !== 'undefined') {
+  useSheetStore.subscribe(
+    async (state) => {
+      const deps: Record<string, string[]> = {};
+      for (let r = 0; r < state.sheet.rows.length; r++) {
+        for (let c = 0; c < state.sheet.rows[r].length; c++) {
+          const cellId = `${String.fromCharCode(65 + c)}${r + 1}`;
+          const val = state.sheet.rows[r][c];
+          if (typeof val === 'string' && val.startsWith('=')) {
+            deps[cellId] = extractDeps(val);
+          }
+        }
+      }
+      for (let r = 0; r < state.sheet.rows.length; r++) {
+        for (let c = 0; c < state.sheet.rows[r].length; c++) {
+          const cellId = `${String.fromCharCode(65 + c)}${r + 1}`;
+          const val = state.sheet.rows[r][c];
+          if (typeof val === 'string' && val.startsWith('=')) {
+            const result = await computeFormula(cellId, val, state.sheet.rows, deps);
+            useSheetStore.setState(
+              produce<SheetStore>((draft) => {
+                draft.computed[cellId] = result;
+              }),
+            );
+          }
+        }
+      }
+    },
+    (state) => state.sheet,
+    { equalityFn: () => false },
+  );
+}
+
 // Seed test data in development mode
 if (process.env.NODE_ENV === 'development') {
-  initialState.rows = Array.from({ length: 1000 }, () =>
+  initialSheet.rows = Array.from({ length: 1000 }, () =>
     Array.from({ length: 30 }, () => Math.random()),
   );
 }
